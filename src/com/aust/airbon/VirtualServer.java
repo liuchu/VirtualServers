@@ -2,6 +2,7 @@ package com.aust.airbon;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.sun.scenario.effect.impl.sw.sse.SSEBlend_SRC_OUTPeer;
 import org.apache.log4j.Logger;
 
 import java.io.*;
@@ -35,12 +36,17 @@ public class VirtualServer {
     private int usedDisk;           //磁盘使用量
     private int currentThreads;     //当前运行的线程数
 
-    /*  */
+    /*该成员变量不是服务器的属性，用于定义服务器的数据变化趋势
+     *有三种：1. load_increase 压力持续增长 2. load_decrease 压力持续下降 3. load_balance 压力平衡
+     */
+    private int trend;
+
+    /* Socket */
     private ServerSocket heartBeatSocket = null;
     private ServerSocket dataTransferSocket = null;
     private ServerSocket configUpdateSocket = null;
 
-    private static Logger logger = Logger.getLogger(VirtualServer.class);
+    //private static Logger logger = Logger.getLogger(VirtualServer.class);
 
     /* 空的构造函数 */
     private VirtualServer() {
@@ -71,8 +77,8 @@ public class VirtualServer {
     }
 
     /* 传入基本服务器数据，构造函数 */
-    public VirtualServer(int heartBeatPort, int dataTransferPort, String CPU, int memory, int disk,
-                         String IP, int maxAllowedThreads, boolean online) throws IOException {
+    public VirtualServer(int heartBeatPort, int dataTransferPort, int configUpdatePort, String CPU, int memory, int disk,
+                         String IP, int maxAllowedThreads, boolean online, int trend) throws IOException {
         this.heartBeatPort = heartBeatPort;
         this.dataTransferPort = dataTransferPort;
         this.CPU = CPU;
@@ -81,26 +87,31 @@ public class VirtualServer {
         this.IP = IP;
         this.maxAllowedThreads = maxAllowedThreads;
         this.online = online;
+        this.trend = trend;
 
         heartBeatSocket = new ServerSocket(heartBeatPort);
         dataTransferSocket = new ServerSocket(dataTransferPort);
         configUpdateSocket = new ServerSocket(configUpdatePort);
 
-        initStatus(10);
+        initStatus();
     }
 
-    //初始化状态
-    public void initStatus(int currentThreads){
-        setCurrentThreads(currentThreads);
+    //初始化状态, 给一个初始的状态
+    // CPU 一开始占用20%，内存50%，硬盘20%，当前线程1/10
+    public void initStatus(){
+        setUsedCPU(20);
+        setUsedMemory(getMemory()/2);
+        setUsedDisk(getDisk()/5);
+        setCurrentThreads(1/10);
     }
 
     /* Getter 和 Setter, 静态数据只允许Get*/
 
-    public int getHeartBeatPort() {
+    private int getHeartBeatPort() {
         return heartBeatPort;
     }
 
-    public int getDataTransferPort() {
+    private int getDataTransferPort() {
         return dataTransferPort;
     }
 
@@ -114,6 +125,10 @@ public class VirtualServer {
 
     public int getDisk() {
         return disk;
+    }
+
+    private int getTrend() {
+        return trend;
     }
 
     /* Getter 和 Setter, 可变数据可以Get和Set */
@@ -187,18 +202,12 @@ public class VirtualServer {
         setOnline(false);
     }
 
-    //更新IP配置
-    public void updateConfigIP(String IP){
-        setIP(IP);
-    }
-
     //更新最大线程数配置
     public void updateConfigMaxAllowedThreads(int maxAllowedThreads){
         setMaxAllowedThreads(maxAllowedThreads);
     }
 
-    /* 模拟服务器的状态改变
-     * 每一次改变，都将数据记录在文件当中 */
+    /* 模拟服务器的状态改变 */
     public void freshStatus(int usedCPU, int usedMemory, int usedDisk, int currentThreads){
         //System.out.println("THREADS:"+currentThreads);
         setUsedCPU(usedCPU);
@@ -208,28 +217,16 @@ public class VirtualServer {
     }
 
     /* 开始运行 */
-    public void ready(){
+    public void ready() {
 
 
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                //一直运行，检查
+        Thread heartBeatThread =  new Thread(new HeartBeatRunnable());
+        Thread dataTransferThread =  new Thread(new DataTransferRunnable());
+        //Thread updateConfigThread =  new Thread(new UpdateConfigRunnable());
 
-
-            }
-        }).start();
-
-        //启动一个线程，无限循环，来接收客户端传过来的请求。
-        //间隔很长,10 min一次，传回的是过去10分钟数据的平均值。平均值通过读取文件来计算
-       /* new Thread(new Runnable() {
-            @Override
-            public void run() {
-                //一直运行，检查
-
-            }
-        }).start();*/
-
+        heartBeatThread.start();
+        dataTransferThread.start();
+        //updateConfigThread.start();
 
         Runnable runnable4 = new VirtualServer.StatusRefreshRunnable();
         //定时运行,每10S，服务器状态会改变一次
@@ -237,15 +234,6 @@ public class VirtualServer {
         service.scheduleAtFixedRate(runnable4, 10, 10, TimeUnit.SECONDS);
     }
 
-    //处理来自Client的json信息
-    //1. GET 请求获取当前服务器的数据
-    //2. PUT 请求更新当前服务器的配置
-    public String handleMessageFromClient(String message){
-        System.out.println("收到来自客户端的信息:"+message);
-
-        int threadNum = getCurrentThreads();
-        return "服务器当前线程数为："+threadNum;
-    }
 
 /**************************** 声明内部类 ****************************/
     /* 用于接收心跳检测的线程类
@@ -262,6 +250,7 @@ public class VirtualServer {
                     if (VirtualServer.this.isOnline()){ //如果Server是online状态，那么持续接收客户端的信息
                         try {
                             Socket socket = null;
+                            System.out.println(getIP()+"心跳系统已启动，随时接收连接");
                             socket = VirtualServer.this.heartBeatSocket.accept();
 
                             //读入流
@@ -278,8 +267,9 @@ public class VirtualServer {
                             socket.shutdownInput();//关闭输入流
 
                             //处理，并返回数据
-                            //String response = VirtualServer.this.handleMessageFromClient(message.toString());
-                            String response = "SUCCESS";
+                            JSONObject serverStatus = new JSONObject();
+                            serverStatus.put("outcome","online");
+                            String response = serverStatus.toJSONString();
 
                             //System.out.println(response);
                             //获取输出流，响应客户端的请求
@@ -315,6 +305,7 @@ public class VirtualServer {
                 if (VirtualServer.this.isOnline()){ //如果Server是online状态，那么持续接收客户端的信息
                     try {
                         Socket socket = null;
+                        System.out.println(getIP()+"状态传输系统已启动，随时接收连接");
                         socket = VirtualServer.this.dataTransferSocket.accept();
 
                         //这个Socket无需读出客户端传过来的message，收到请求后，就将最新的状态信息
@@ -407,7 +398,7 @@ public class VirtualServer {
                                 VirtualServer.this.setMaxAllowedThreads(value);
                             }
                         } else {
-                            logger.warn("Do not support type "+type);
+                            //logger.warn("Do not support type "+type);
                         }
 
                         //处并返回数据服务器信息
@@ -436,13 +427,45 @@ public class VirtualServer {
     }
 
     /* 用于模拟虚拟服务器的状态变化
-     * 一直运行，将输入的数据设置为状态值
+     * 一直运行
      */
     class StatusRefreshRunnable implements Runnable {
 
+        long times = 0; //10天时间大概会刷新100,000次
+
         @Override
         public void run() {
+            int tread = getTrend();
 
+            if (times > Long.MAX_VALUE - 2) {
+                System.out.println("Already run "+(Long.MAX_VALUE - 2)+" times, server is dead forever");
+            }
+
+            if (VirtualServer.this.isOnline()){
+                switch (tread) {
+                    case 1: //模拟load增长
+                        //int usedCPU, int usedMemory, int usedDisk, int currentThreads
+
+                        int totalMemory = getMemory();
+
+                        int newUsedCPUT = (int)(Math.random()*100)+30;//CPU随机
+                        int newUsedCPU = newUsedCPUT<100 ? newUsedCPUT : (newUsedCPUT-30);
+
+                        //int newUsedMemory = times;
+                        break;
+                    case 2: //模拟load衰减
+                        break;
+                    case 3:
+                        break;
+                    default:
+                        System.out.println("错误的tread");
+                }
+                System.out.println(getIP()+" 更新服务器状态，完成");
+            } else {
+                System.out.println(getIP()+" 是离线状态，退出状态更新");
+            }
+
+            //logger.info("正在更新状态，完成");
         }
     }
 
@@ -451,10 +474,8 @@ public class VirtualServer {
         String jsonString1 = JSON.toJSONString(vs);
         System.out.println(jsonString1);*/
 
-        if (1000==1000) {
-            System.out.println("1000");
-        }
-
+        //System.out.println(Long.MAX_VALUE/(6*60*24));
+        System.out.println((90001/12500) * 2 );
     }
 
 
