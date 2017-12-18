@@ -2,8 +2,6 @@ package com.aust.airbon;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import com.sun.scenario.effect.impl.sw.sse.SSEBlend_SRC_OUTPeer;
-import org.apache.log4j.Logger;
 
 import java.io.*;
 import java.net.ServerSocket;
@@ -31,7 +29,7 @@ public class VirtualServer {
 
     /*运行状态，会随系统随时改变 */
     private boolean online;         //虚拟服务器的状态，online时Socket服务正常运行，offline关闭
-    private int usedCPU;         //CPU使用率
+    private int usedCPU;            //CPU使用率
     private int usedMemory;         //内存状态
     private int usedDisk;           //磁盘使用量
     private int currentThreads;     //当前运行的线程数
@@ -102,7 +100,7 @@ public class VirtualServer {
         setUsedCPU(20);
         setUsedMemory(getMemory()/2);
         setUsedDisk(getDisk()/5);
-        setCurrentThreads(1/10);
+        setCurrentThreads(getMaxAllowedThreads()/10);
     }
 
     /* Getter 和 Setter, 静态数据只允许Get*/
@@ -218,7 +216,6 @@ public class VirtualServer {
 
     /* 开始运行 */
     public void ready() {
-
 
         Thread heartBeatThread =  new Thread(new HeartBeatRunnable());
         Thread dataTransferThread =  new Thread(new DataTransferRunnable());
@@ -389,7 +386,12 @@ public class VirtualServer {
                             boolean value = command.getBooleanValue("value");
                             //锁，防止资源被多个线程同时访问
                             synchronized (VirtualServer.this) {
-                                VirtualServer.this.setOnline(value);
+                                //VirtualServer.this.setOnline(value);
+                                if (value) {
+                                    VirtualServer.this.startServer();
+                                } else {
+                                    VirtualServer.this.stopServer();
+                                }
                             }
                         } else if ("maxAllowedThreads".equals(type)) {
                             //修改最大线程数
@@ -435,7 +437,7 @@ public class VirtualServer {
 
         @Override
         public void run() {
-            int tread = getTrend();
+            /*int tread = getTrend();
 
             if (times > Long.MAX_VALUE - 2) {
                 System.out.println("Already run "+(Long.MAX_VALUE - 2)+" times, server is dead forever");
@@ -448,8 +450,8 @@ public class VirtualServer {
 
                         int totalMemory = getMemory();
 
-                        int newUsedCPUT = (int)(Math.random()*100)+30;//CPU随机
-                        int newUsedCPU = newUsedCPUT<100 ? newUsedCPUT : (newUsedCPUT-30);
+                        int newUsedCPUT = (int)(Math.random()*100)+50;//CPU随机
+                        int newUsedCPU = newUsedCPUT<100 ? newUsedCPUT : (newUsedCPUT-50);
 
                         //int newUsedMemory = times;
                         break;
@@ -463,9 +465,19 @@ public class VirtualServer {
                 System.out.println(getIP()+" 更新服务器状态，完成");
             } else {
                 System.out.println(getIP()+" 是离线状态，退出状态更新");
-            }
+            }*/
 
             //logger.info("正在更新状态，完成");
+            if (VirtualServer.this.isOnline()){
+                System.out.println(getIP()+" 更新服务器状态，完成");
+            } else {
+                System.out.println(getIP()+" 是离线状态，退出状态更新");
+            }
+
+        }
+
+        private int newData(int wholeData, int millis ){
+            return (int)(wholeData*times)/millis;
         }
     }
 
@@ -475,7 +487,10 @@ public class VirtualServer {
         System.out.println(jsonString1);*/
 
         //System.out.println(Long.MAX_VALUE/(6*60*24));
-        System.out.println((90001/12500) * 2 );
+        //System.out.println((90001/12500) * 2 );
+
+        int a = (int)(8*1024*50000)/100000;
+        System.out.println(a);
     }
 
 
