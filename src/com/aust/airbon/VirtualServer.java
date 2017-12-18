@@ -43,11 +43,11 @@ public class VirtualServer {
     private static Logger logger = Logger.getLogger(VirtualServer.class);
 
     /* 空的构造函数 */
-    public VirtualServer() {
+    private VirtualServer() {
 
     }
 
-    public VirtualServer(int heartBeatPort, int dataTransferPort, int configUpdatePort,
+    private VirtualServer(int heartBeatPort, int dataTransferPort, int configUpdatePort,
                          String CPU, int memory, int disk, String IP,
                          int maxAllowedThreads, boolean online, int usedCPU, int usedMemory,
                          int usedDisk, int currentThreads, ServerSocket heartBeatSocket,
@@ -72,7 +72,7 @@ public class VirtualServer {
 
     /* 传入基本服务器数据，构造函数 */
     public VirtualServer(int heartBeatPort, int dataTransferPort, String CPU, int memory, int disk,
-                         String IP, int maxAllowedThreads) throws IOException {
+                         String IP, int maxAllowedThreads, boolean online) throws IOException {
         this.heartBeatPort = heartBeatPort;
         this.dataTransferPort = dataTransferPort;
         this.CPU = CPU;
@@ -80,6 +80,7 @@ public class VirtualServer {
         this.disk = disk;
         this.IP = IP;
         this.maxAllowedThreads = maxAllowedThreads;
+        this.online = online;
 
         heartBeatSocket = new ServerSocket(heartBeatPort);
         dataTransferSocket = new ServerSocket(dataTransferPort);
