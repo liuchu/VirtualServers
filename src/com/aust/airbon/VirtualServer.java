@@ -2,6 +2,8 @@ package com.aust.airbon;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import org.apache.log4j.Logger;
+import org.apache.log4j.spi.LoggerFactory;
 
 import java.io.*;
 import java.net.ServerSocket;
@@ -44,7 +46,13 @@ public class VirtualServer {
     private ServerSocket dataTransferSocket = null;
     private ServerSocket configUpdateSocket = null;
 
-    //private static Logger logger = Logger.getLogger(VirtualServer.class);
+    //Logger记录日志
+    Logger heartBeatLog = Logger.getLogger("heart_beat_log");
+    Logger dataTransferLog = Logger.getLogger("date_transfer_log");
+    Logger configUpdateLog = Logger.getLogger("config_update_log");
+    Logger serversStatusLog = Logger.getLogger("servers_status_log");
+    Logger startStopLog = Logger.getLogger("start_stop_log");
+    Logger errorLog = Logger.getLogger("error_log");
 
     /* 空的构造函数 */
     private VirtualServer() {
@@ -79,6 +87,7 @@ public class VirtualServer {
                          String IP, int maxAllowedThreads, boolean online, int trend) throws IOException {
         this.heartBeatPort = heartBeatPort;
         this.dataTransferPort = dataTransferPort;
+        this.configUpdatePort = configUpdatePort;
         this.CPU = CPU;
         this.memory = memory;
         this.disk = disk;
@@ -87,20 +96,32 @@ public class VirtualServer {
         this.online = online;
         this.trend = trend;
 
-        heartBeatSocket = new ServerSocket(heartBeatPort);
-        dataTransferSocket = new ServerSocket(dataTransferPort);
-        configUpdateSocket = new ServerSocket(configUpdatePort);
-
         initStatus();
+    }
+
+    private void initSockets(){
+
+        try {
+            heartBeatSocket = new ServerSocket(heartBeatPort);
+            dataTransferSocket = new ServerSocket(dataTransferPort);
+            configUpdateSocket = new ServerSocket(configUpdatePort);
+            heartBeatLog.info(getIP()+"心跳监测服务启动成功！");
+            dataTransferLog.info(getIP()+"状态传输服务启动成功！");
+            configUpdateLog.info(getIP()+"配置更新服务启动成功！");
+        } catch (IOException exception){
+            errorLog.fatal(getIP()+"心跳监测服务, 状态传输服务, 配置更新服务 启动失败！");
+        }
     }
 
     //初始化状态, 给一个初始的状态
     // CPU 一开始占用20%，内存50%，硬盘20%，当前线程1/10
-    public void initStatus(){
-        setUsedCPU(20);
-        setUsedMemory(getMemory()/2);
-        setUsedDisk(getDisk()/5);
-        setCurrentThreads(getMaxAllowedThreads()/10);
+    private void initStatus(){
+
+            setUsedCPU(20);
+            setUsedMemory(getMemory()/2);
+            setUsedDisk(getDisk()/5);
+            System.out.println(getIP()+"usedDisk:"+getUsedDisk());
+            setCurrentThreads(getMaxAllowedThreads()/10);
     }
 
     /* Getter 和 Setter, 静态数据只允许Get*/
@@ -111,6 +132,10 @@ public class VirtualServer {
 
     private int getDataTransferPort() {
         return dataTransferPort;
+    }
+
+    private int getConfigUpdatePort() {
+        return configUpdatePort;
     }
 
     public String getCPU() {
@@ -192,51 +217,76 @@ public class VirtualServer {
 
     //开启服务器(既开启两个Socket服务，并开始状态刷新)
     public void startServer(){
-        setOnline(true);
+
+        synchronized (VirtualServer.this) {
+            setOnline(true);
+            initStatus();
+        }
+
     }
 
     //停止服务器(既停止两个Socket服务，并停止状态刷新)
     public void stopServer(){
-        setOnline(false);
+
+        synchronized (VirtualServer.this) {
+            setOnline(false);
+        }
     }
 
     //更新最大线程数配置
     public void updateConfigMaxAllowedThreads(int maxAllowedThreads){
-        setMaxAllowedThreads(maxAllowedThreads);
+
+        synchronized (VirtualServer.this) {
+            setMaxAllowedThreads(maxAllowedThreads);
+        }
+
     }
 
     /* 模拟服务器的状态改变 */
     public void freshStatus(int usedCPU, int usedMemory, int usedDisk, int currentThreads){
         //System.out.println("THREADS:"+currentThreads);
-        setUsedCPU(usedCPU);
-        setUsedMemory(usedMemory);
-        setUsedDisk(usedDisk);
-        setCurrentThreads(currentThreads);
+
+        //保证在范围内
+        if (usedCPU>=0 && usedCPU<100 && usedMemory>=0 && usedMemory<getMemory() && usedDisk>=0
+                && usedDisk<getDisk() && currentThreads>=0 && currentThreads<getMaxAllowedThreads()){
+            setUsedCPU(usedCPU);
+            setUsedMemory(usedMemory);
+            setUsedDisk(usedDisk);
+            setCurrentThreads(currentThreads);
+        } else { //不正常的数值，比如硬盘超出范围
+            stopServer();
+        }
+
     }
 
     /* 开始运行 */
     public void ready() {
 
+        initSockets();
+
         Thread heartBeatThread =  new Thread(new HeartBeatRunnable());
         Thread dataTransferThread =  new Thread(new DataTransferRunnable());
-        //Thread updateConfigThread =  new Thread(new UpdateConfigRunnable());
+        Thread updateConfigThread =  new Thread(new UpdateConfigRunnable());
 
         heartBeatThread.start();
         dataTransferThread.start();
-        //updateConfigThread.start();
+        updateConfigThread.start();
 
         Runnable runnable4 = new VirtualServer.StatusRefreshRunnable();
         //定时运行,每10S，服务器状态会改变一次
-        ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
-        service.scheduleAtFixedRate(runnable4, 10, 10, TimeUnit.SECONDS);
+        try {
+            ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
+            service.scheduleAtFixedRate(runnable4, 10, 10, TimeUnit.SECONDS);
+            serversStatusLog.info(getIP()+"状态定时更新服务启动成功");
+        } catch (Exception e){
+            errorLog.fatal(getIP()+"状态定时更新服务启动失败！");
+        }
     }
 
 
 /**************************** 声明内部类 ****************************/
     /* 用于接收心跳检测的线程类
      * 启动线程来无限循环来维持程序一直运行
-     * 检测心跳。
-     * 定时，间隔十分短，比如5s，实时数据。
      */
     class HeartBeatRunnable implements Runnable {
 
@@ -247,7 +297,7 @@ public class VirtualServer {
                     if (VirtualServer.this.isOnline()){ //如果Server是online状态，那么持续接收客户端的信息
                         try {
                             Socket socket = null;
-                            System.out.println(getIP()+"心跳系统已启动，随时接收连接");
+
                             socket = VirtualServer.this.heartBeatSocket.accept();
 
                             //读入流
@@ -274,8 +324,10 @@ public class VirtualServer {
                             pw.write(response);
                             pw.flush();
                             socket.shutdownOutput();
+                            heartBeatLog.info(getIP()+"监听系统获取了一次心跳");
                         } catch (IOException e) {
                             e.printStackTrace();
+                            heartBeatLog.error(getIP()+"心跳监测服务accept请求失败！");
                         }
                     } else {
                         //当offline时，线程sleep5秒。5秒之后while会继续执行，再次判断是否offline
@@ -283,6 +335,7 @@ public class VirtualServer {
                             Thread.sleep(1000*5);
                         } catch (InterruptedException e) {
                             e.printStackTrace();
+                            heartBeatLog.error("心跳监测服务线程sleep失败！");
                         }
                     }
                 }
@@ -302,7 +355,6 @@ public class VirtualServer {
                 if (VirtualServer.this.isOnline()){ //如果Server是online状态，那么持续接收客户端的信息
                     try {
                         Socket socket = null;
-                        System.out.println(getIP()+"状态传输系统已启动，随时接收连接");
                         socket = VirtualServer.this.dataTransferSocket.accept();
 
                         //这个Socket无需读出客户端传过来的message，收到请求后，就将最新的状态信息
@@ -335,15 +387,19 @@ public class VirtualServer {
                         pw.write(jsonString);
                         pw.flush();
                         socket.shutdownOutput();
+
+                        dataTransferLog.info(getIP()+" 客户端获取了一次状态信息, 状态是:"+jsonString);
                     } catch (IOException e) {
                         e.printStackTrace();
+                        dataTransferLog.error(getIP()+"状态传输服务accept请求失败！");
                     }
                 } else {
-                    //当offline时，线程sleep5秒。5秒之后while会继续执行，再次判断是否offline
+                    //当offline时，线程sleep 5秒。5秒之后while会继续执行，再次判断是否offline
                     try {
                         Thread.sleep(1000*5);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
+                        dataTransferLog.error(getIP()+"状态传输服务线程sleep失败！");
                     }
                 }
             }
@@ -389,21 +445,23 @@ public class VirtualServer {
                                 //VirtualServer.this.setOnline(value);
                                 if (value) {
                                     VirtualServer.this.startServer();
+                                    startStopLog.info(getIP()+ "客户端启动了一次服务器");
                                 } else {
                                     VirtualServer.this.stopServer();
+                                    startStopLog.info(getIP()+ "客户端关闭了一次服务器");
                                 }
                             }
+
                         } else if ("maxAllowedThreads".equals(type)) {
                             //修改最大线程数
                             int value = command.getIntValue("value");
-                            synchronized (VirtualServer.this) {
-                                VirtualServer.this.setMaxAllowedThreads(value);
-                            }
+                            updateConfigMaxAllowedThreads(value);
+                            startStopLog.info(getIP()+ "客户端修改了最大线程数,新的数值为"+value);
                         } else {
-                            //logger.warn("Do not support type "+type);
+                            configUpdateLog.warn("不支持的命令类型: "+type);
                         }
 
-                        //处并返回数据服务器信息
+                        //处并返回数据,服务器信息
                         //String response = VirtualServer.this.handleMessageFromClient(message.toString());
                         JSONObject serverStatus = new JSONObject();
                         serverStatus.put("outcome", "SUCCESS");
@@ -413,8 +471,10 @@ public class VirtualServer {
                         //pw.write(jsonString);
                         pw.flush();
                         socket.shutdownOutput();
+
                     } catch (IOException e) {
                         e.printStackTrace();
+                        configUpdateLog.error(getIP()+"更新配置服务accept请求失败");
                     }
                 } else {
                     //当offline时，线程sleep5秒。5秒之后while会继续执行，再次判断是否offline
@@ -422,6 +482,7 @@ public class VirtualServer {
                         Thread.sleep(1000*5);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
+                        configUpdateLog.error(getIP()+"更新配置服务线程sleep失败！");
                     }
                 }
             }
@@ -433,64 +494,93 @@ public class VirtualServer {
      */
     class StatusRefreshRunnable implements Runnable {
 
-        long times = 0; //10天时间大概会刷新100,000次
+        int times = 0; //10天时间大概会刷新100,000次
 
         @Override
         public void run() {
-            /*int tread = getTrend();
+            int tread = getTrend();
 
-            if (times > Long.MAX_VALUE - 2) {
-                System.out.println("Already run "+(Long.MAX_VALUE - 2)+" times, server is dead forever");
+            if (times > (Integer.MAX_VALUE - 2)) {
+                System.out.println("Already run "+(Integer.MAX_VALUE - 2)+" times, server is dead forever");
             }
 
             if (VirtualServer.this.isOnline()){
+
+                int newUsedCPU = 0;
+                int newUsedMemory = 0;
+                int newUsedDisk = 0;
+                int newCurrentThread = 0;
+
+                times++;
+
                 switch (tread) {
                     case 1: //模拟load增长
                         //int usedCPU, int usedMemory, int usedDisk, int currentThreads
 
-                        int totalMemory = getMemory();
+                        newUsedCPU = (int)(Math.random()*100/2)+50;//CPU随机, 且永远大于50%
 
-                        int newUsedCPUT = (int)(Math.random()*100)+50;//CPU随机
-                        int newUsedCPU = newUsedCPUT<100 ? newUsedCPUT : (newUsedCPUT-50);
+                        newUsedMemory = (int)(Math.random()*getMemory()/5)+getMemory()*4/5; //内存随机，且永远大于80%
 
-                        //int newUsedMemory = times;
+                        newUsedDisk = getDisk()/5+increaseNewDisk(getDisk()*4/5,100000, times);//100,000次硬盘会涨满，自增
+
+                        newCurrentThread = newUsedMemory*getMaxAllowedThreads()/getMemory();//Thread和Memory成正比
+
                         break;
                     case 2: //模拟load衰减
+
+                        newUsedCPU = (int)(Math.random()*100/5);//CPU随机, 且永远小于20%
+
+                        newUsedMemory = (int)(Math.random()*getMemory()/5); //内存随机，且永远小于20%
+
+                        newUsedDisk = getDisk()/5+increaseNewDisk(getDisk()*4/5,1000000, times);//1000,000次硬盘会涨满，自增
+
+                        newCurrentThread = newUsedMemory*getMaxAllowedThreads()/getMemory();//Thread和Memory成正比
+
                         break;
-                    case 3:
+                    case 3: //模拟平稳运行
+                        newUsedCPU = (int)(Math.random()*100/10)+30;//CPU随机, 处于30~40之间
+
+                        newUsedMemory = (int)(Math.random()*getMemory()/5)+getMemory()*3/10; //内存随机，处于%30~50%之间
+
+                        newUsedDisk = getDisk()/5+increaseNewDisk(getDisk()*4/5,400000, times);//100,000次硬盘会涨满，自增
+
+                        newCurrentThread = newUsedMemory*getMaxAllowedThreads()/getMemory();//Thread和Memory成正比
+
+                        break;
+                    case 4: //模拟极限情况，硬盘满了，server运行崩溃
+
+                        newUsedCPU = (int)(Math.random()*100/10)+30;//CPU随机, 处于30~40之间
+
+                        newUsedMemory = (int)(Math.random()*getMemory()/5)+getMemory()*3/10; //内存随机，处于%30~50%之间
+
+                        newUsedDisk = getDisk()/5+increaseNewDisk(getDisk()*4/5,30, times);//30次硬盘会涨满，自增
+
+                        newCurrentThread = newUsedMemory*getMaxAllowedThreads()/getMemory();//Thread和Memory成正比
+
                         break;
                     default:
-                        System.out.println("错误的tread");
+                        serversStatusLog.error(getIP()+" 不支持的tread");
                 }
-                System.out.println(getIP()+" 更新服务器状态，完成");
-            } else {
-                System.out.println(getIP()+" 是离线状态，退出状态更新");
-            }*/
 
-            //logger.info("正在更新状态，完成");
-            if (VirtualServer.this.isOnline()){
-                System.out.println(getIP()+" 更新服务器状态，完成");
+                synchronized (VirtualServer.this) { //修改对象属性，加锁
+                    VirtualServer.this.freshStatus(newUsedCPU,newUsedMemory,newUsedDisk,newCurrentThread);
+                }
+
+                serversStatusLog.info(getIP()+" 更新服务器状态，完成。usedCPU="+newUsedCPU+";usedMemory="+newUsedMemory
+                        +";usedDisk="+newUsedDisk+";currentThread="+newCurrentThread);
+                System.out.println(getIP()+" 更新服务器状态，完成。usedCPU="+newUsedCPU+";usedMemory="+newUsedMemory
+                        +";usedDisk="+newUsedDisk+";currentThread="+newCurrentThread);
             } else {
-                System.out.println(getIP()+" 是离线状态，退出状态更新");
+                serversStatusLog.warn(getIP()+" 是离线状态，状态不会更新");
+                System.out.println(getIP()+" 是离线状态，状态不会更新");
             }
 
         }
 
-        private int newData(int wholeData, int millis ){
-            return (int)(wholeData*times)/millis;
+        private int increaseNewDisk(int wholeData, int millis,int times ){
+            return (wholeData*times)/millis;
         }
-    }
 
-    public static void main(String[] args) {
-        /*VirtualServer vs = new VirtualServer(10000,10001,10002,"I5",50,1000,"1.1.1.1",200,true,50,50,100,100,null,null,null);
-        String jsonString1 = JSON.toJSONString(vs);
-        System.out.println(jsonString1);*/
-
-        //System.out.println(Long.MAX_VALUE/(6*60*24));
-        //System.out.println((90001/12500) * 2 );
-
-        int a = (int)(8*1024*50000)/100000;
-        System.out.println(a);
     }
 
 

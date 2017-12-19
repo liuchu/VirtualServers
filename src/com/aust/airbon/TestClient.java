@@ -15,7 +15,9 @@ import java.util.concurrent.TimeUnit;
  */
 public class TestClient implements Runnable{
 
-
+    private static int increaseNewDisk(int wholeData, int millis,int times ){
+        return (wholeData*times)/millis;
+    }
 
     public void run() {
         int port = 10200;
@@ -58,13 +60,18 @@ public class TestClient implements Runnable{
 
     public static void main(String[] args) throws IOException{
 
-        TestClient client = new TestClient();
+/*        TestClient client = new TestClient();
 
         //定时运行,10S一次
         ScheduledExecutorService service = Executors
                 .newSingleThreadScheduledExecutor();
         // 第二个参数为首次执行的延时时间，第三个参数为定时执行的间隔时间
-        service.scheduleAtFixedRate(client, 10, 10, TimeUnit.SECONDS);
+        service.scheduleAtFixedRate(client, 10, 10, TimeUnit.SECONDS);*/
+
+        //System.out.println("2048000>Integer max? "+(2048000>Integer.MAX_VALUE));
+
+        int a = increaseNewDisk(500*1024, 100000,1 );
+        System.out.println(a);
 
     }
 }

@@ -1,5 +1,6 @@
 package com.aust.airbon;
 
+import org.apache.log4j.PropertyConfigurator;
 import org.ini4j.Wini;
 
 import java.io.File;
@@ -14,6 +15,9 @@ public class Main {
 
         server.startServer();
         server.ready();*/
+
+        PropertyConfigurator.configure("src/com/aust/airbon/log4j.properties");
+
         Wini ini = new Wini(new File("src/com/aust/airbon/servers.ini"));
 
         for (int i=1; i<11; i++) {
@@ -28,7 +32,7 @@ public class Main {
             boolean online = ini.get("server"+i,"online", boolean.class);
             int tread = ini.get("server"+i,"tread",int.class);
 
-            //System.out.println(i+" "+IP+" "+online);
+            //System.out.println(i+" "+IP+" "+disk);
             //System.out.println(IP+online2);
 
             VirtualServer server = new VirtualServer(heartBeatPort,dataTransferPort,configUpdatePort,
