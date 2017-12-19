@@ -47,12 +47,12 @@ public class VirtualServer {
     private ServerSocket configUpdateSocket = null;
 
     //Logger记录日志
-    Logger heartBeatLog = Logger.getLogger("heart_beat_log");
-    Logger dataTransferLog = Logger.getLogger("date_transfer_log");
-    Logger configUpdateLog = Logger.getLogger("config_update_log");
-    Logger serversStatusLog = Logger.getLogger("servers_status_log");
-    Logger startStopLog = Logger.getLogger("start_stop_log");
-    Logger errorLog = Logger.getLogger("error_log");
+    static Logger  heartBeatLog = Logger.getLogger("heart_beat_log");
+    static Logger dataTransferLog = Logger.getLogger("date_transfer_log");
+    static Logger configUpdateLog = Logger.getLogger("config_update_log");
+    static Logger serversStatusLog = Logger.getLogger("servers_status_log");
+    static Logger startStopLog = Logger.getLogger("start_stop_log");
+    static Logger errorLog = Logger.getLogger("error_log");
 
     /* 空的构造函数 */
     private VirtualServer() {
@@ -120,7 +120,6 @@ public class VirtualServer {
             setUsedCPU(20);
             setUsedMemory(getMemory()/2);
             setUsedDisk(getDisk()/5);
-            System.out.println(getIP()+"usedDisk:"+getUsedDisk());
             setCurrentThreads(getMaxAllowedThreads()/10);
     }
 
@@ -223,6 +222,8 @@ public class VirtualServer {
             initStatus();
         }
 
+        startStopLog.info(getIP()+"服务器开启");
+
     }
 
     //停止服务器(既停止两个Socket服务，并停止状态刷新)
@@ -231,6 +232,7 @@ public class VirtualServer {
         synchronized (VirtualServer.this) {
             setOnline(false);
         }
+        startStopLog.info(getIP()+"服务器关闭");
     }
 
     //更新最大线程数配置
@@ -445,10 +447,8 @@ public class VirtualServer {
                                 //VirtualServer.this.setOnline(value);
                                 if (value) {
                                     VirtualServer.this.startServer();
-                                    startStopLog.info(getIP()+ "客户端启动了一次服务器");
                                 } else {
                                     VirtualServer.this.stopServer();
-                                    startStopLog.info(getIP()+ "客户端关闭了一次服务器");
                                 }
                             }
 
@@ -501,7 +501,7 @@ public class VirtualServer {
             int tread = getTrend();
 
             if (times > (Integer.MAX_VALUE - 2)) {
-                System.out.println("Already run "+(Integer.MAX_VALUE - 2)+" times, server is dead forever");
+                errorLog.error(getIP()+"Already run "+(Integer.MAX_VALUE - 2)+" times, server is dead forever");
             }
 
             if (VirtualServer.this.isOnline()){
@@ -568,11 +568,8 @@ public class VirtualServer {
 
                 serversStatusLog.info(getIP()+" 更新服务器状态，完成。usedCPU="+newUsedCPU+";usedMemory="+newUsedMemory
                         +";usedDisk="+newUsedDisk+";currentThread="+newCurrentThread);
-                System.out.println(getIP()+" 更新服务器状态，完成。usedCPU="+newUsedCPU+";usedMemory="+newUsedMemory
-                        +";usedDisk="+newUsedDisk+";currentThread="+newCurrentThread);
             } else {
                 serversStatusLog.warn(getIP()+" 是离线状态，状态不会更新");
-                System.out.println(getIP()+" 是离线状态，状态不会更新");
             }
 
         }
