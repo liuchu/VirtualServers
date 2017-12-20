@@ -4,21 +4,42 @@ import org.apache.log4j.PropertyConfigurator;
 import org.ini4j.Wini;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
 
 public class Main {
 
     public static void main(String[] args) throws IOException{
-	    // write your code here
-        /*VirtualServer server = new VirtualServer(10086,10087,10088,
-                "I5",50,500,"10.134.1.108",100, true,1);
 
-        server.startServer();
-        server.ready();*/
+        Wini ini = null;
 
-        PropertyConfigurator.configure("src/com/aust/airbon/log4j.properties");
+        try {
 
-        Wini ini = new Wini(new File("src/com/aust/airbon/servers.ini"));
+            String log4jConf = "log4j.properties"; // could also be a constant
+            String serverIni = "servers.ini"; // could also be a constant
+
+            ClassLoader loader = Thread.currentThread().getContextClassLoader();
+
+            Properties props = new Properties();
+            try(InputStream resourceStream = loader.getResourceAsStream(log4jConf)) {
+                props.load(resourceStream);
+            }
+            PropertyConfigurator.configure(props);
+
+            try(InputStream resourceStream = loader.getResourceAsStream(serverIni)) {
+
+                ini = new Wini(resourceStream);
+            }
+
+        } catch (FileNotFoundException exception) {
+            System.err.println("FILE NOT FOUND");
+            exception.printStackTrace();
+            System.exit(1);
+        }
+
+
 
         for (int i=1; i<11; i++) {
             int heartBeatPort = ini.get("server"+i,"heartBeatPort",int.class);
