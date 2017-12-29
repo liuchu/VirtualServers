@@ -219,10 +219,13 @@ public class VirtualServer {
 
         synchronized (VirtualServer.this) {
             setOnline(true);
+        }
+
+        synchronized (VirtualServer.this) {
             initStatus();
         }
 
-        startStopLog.info(getIP()+"服务器开启");
+        startStopLog.info(getIP()+"服务器开启"+isOnline());
 
     }
 
@@ -398,7 +401,7 @@ public class VirtualServer {
                 } else {
                     //当offline时，线程sleep 5秒。5秒之后while会继续执行，再次判断是否offline
                     try {
-                        Thread.sleep(1000*5);
+                        Thread.sleep(1000*2);
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                         dataTransferLog.error(getIP()+"状态传输服务线程sleep失败！");
@@ -420,7 +423,7 @@ public class VirtualServer {
         @Override
         public void run() {
             while (true) {
-                if (VirtualServer.this.isOnline()){ //如果Server是online状态，那么持续接收客户端的信息
+
                     try {
                         Socket socket = null;
                         socket = VirtualServer.this.configUpdateSocket.accept();
@@ -428,7 +431,7 @@ public class VirtualServer {
                         //这个Socket无需读出客户端传过来的message，收到请求后，就将最新的状态信息
                         BufferedReader bufferedReader =new BufferedReader(new InputStreamReader(socket.getInputStream()));
                         StringBuffer message = new StringBuffer();
-                        String line =null;
+                        String line ="";
                         while((line=bufferedReader.readLine())!=null){
                             message.append(line);
                             //message.append("/r");
@@ -478,15 +481,7 @@ public class VirtualServer {
                         e.printStackTrace();
                         configUpdateLog.error(getIP()+"更新配置服务accept请求失败");
                     }
-                } else {
-                    //当offline时，线程sleep5秒。5秒之后while会继续执行，再次判断是否offline
-                    try {
-                        Thread.sleep(1000*5);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                        configUpdateLog.error(getIP()+"更新配置服务线程sleep失败！");
-                    }
-                }
+
             }
         }
     }
