@@ -452,7 +452,7 @@ public class VirtualServer {
                                 }
                             }
 
-                        } else if ("maxAllowedThreads".equals(type)) {
+                        } else if ("threads".equals(type)) {
                             //修改最大线程数
                             int value = command.getIntValue("value");
                             updateConfigMaxAllowedThreads(value);
@@ -464,11 +464,13 @@ public class VirtualServer {
                         //处并返回数据,服务器信息
                         //String response = VirtualServer.this.handleMessageFromClient(message.toString());
                         JSONObject serverStatus = new JSONObject();
-                        serverStatus.put("outcome", "SUCCESS");
+                        serverStatus.put("response", "success");
+
+                        String jsonString = serverStatus.toJSONString();
 
                         //获取输出流，响应客户端的请求
                         PrintWriter pw = new PrintWriter(socket.getOutputStream());
-                        //pw.write(jsonString);
+                        pw.write(jsonString);
                         pw.flush();
                         socket.shutdownOutput();
 
